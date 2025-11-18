@@ -1,146 +1,150 @@
 #include <Servo.h>
 
 // ============================
-// Configuración de pines
+// 1) Configuración de pines
 // ============================
 
-// Sensores de humedad
+// Sensor de humedad
 const int PIN_SENSOR_Z1 = A0;
-const int PIN_SENSOR_Z2 = A1;
 
-// Servos
+// Servo
 const int PIN_SERVO_Z1 = 9;
-const int PIN_SERVO_Z2 = 10;
 
-// Ángulos de los servos
-const int SERVO_ANGULO_ABIERTO  = 0;    // riego activado (llave abierta)
-const int SERVO_ANGULO_CERRADO = 180;  // riego desactivado (llave cerrada)
-
-// Calibración de humedad (AJUSTAR con tus lecturas)
-int Z1_VALOR_SECO   = 800;   // lectura con tierra seca para Z1
-int Z1_VALOR_MOJADO = 300;   // lectura con tierra muy húmeda/agua para Z1
-
-int Z2_VALOR_SECO   = 800;   // lectura con tierra seca para Z2
-int Z2_VALOR_MOJADO = 300;   // lectura con tierra muy húmeda/agua para Z2
+// ============================
+// 2) Calibración de humedad
+// ============================
+int Z1_VALOR_SECO   = 1023;
+int Z1_VALOR_MOJADO = 1;
 
 // Envío de datos cada X ms
-const unsigned long INTERVALO_ENVIO = 2000; // 2 segundos
+const unsigned long INTERVALO_ENVIO = 2000;
 unsigned long ultimoEnvio = 0;
 
-// Estado de riego (decidido por Django)
+// Estado de riego (según último comando recibido)
 bool riegoZ1 = false;
-bool riegoZ2 = false;
 
-// Objetos Servo
+// Objeto Servo
 Servo servoZ1;
-Servo servoZ2;
 
 // ============================
-// Funciones auxiliares
+// 3) Ángulos de servos (MG995)
+// ============================
+// AJUSTA ESTOS VALORES según tu montaje
+const int ANGULO_CERRADO = 20;   // válvula cerrada
+const int ANGULO_ABIERTO = 120;  // válvula abierta
+
+// ============================
+// 4) Funciones auxiliares
 // ============================
 
 float calcularHumedad(int lectura, int valorSeco, int valorMojado) {
-  // Mientras más húmedo, más BAJO es el valor analógico
-  float humedad = map(lectura, valorSeco, valorMojado, 0, 100);
+  float humedad = map(lectura, valorMojado, valorSeco, 100, 0);
   if (humedad < 0)   humedad = 0;
   if (humedad > 100) humedad = 100;
   return humedad;
 }
 
-void aplicarEstadoRiego() {
-  // Si riego activado -> servo a ángulo de "abierto"
-  // Si riego desactivado -> servo a ángulo de "cerrado"
-  servoZ1.write(riegoZ1 ? SERVO_ANGULO_ABIERTO : SERVO_ANGULO_CERRADO);
-  servoZ2.write(riegoZ2 ? SERVO_ANGULO_ABIERTO : SERVO_ANGULO_CERRADO);
+// Movimiento entre ángulos con barrido corto
+void moverServoSuave(Servo &servo, int desde, int hasta) {
+  if (desde == hasta) return;
+
+  if (desde < hasta) {
+    for (int pos = desde; pos <= hasta; pos++) {
+      servo.write(pos);
+      delay(10);
+    }
+  } else {
+    for (int pos = desde; pos >= hasta; pos--) {
+      servo.write(pos);
+      delay(10);
+    }
+  }
+}
+
+void abrirAgua(Servo &servo) {
+  Serial.println("DEBUG abrirAgua(): barrido CERRADO -> ABIERTO");
+  moverServoSuave(servo, ANGULO_CERRADO, ANGULO_ABIERTO);
+}
+
+void cerrarAgua(Servo &servo) {
+  Serial.println("DEBUG cerrarAgua(): barrido ABIERTO -> CERRADO");
+  moverServoSuave(servo, ANGULO_ABIERTO, ANGULO_CERRADO);
 }
 
 // Procesa una línea de comando proveniente de Django
-// Formato esperado: RIEGO;Z1=1;Z2=0
+// Formato esperado: RIEGO;Z1=1
 void procesarComando(String linea) {
   linea.trim();
+
+  Serial.print("Comando recibido bruto: ");
+  Serial.println(linea);
+
   if (!linea.startsWith("RIEGO;")) {
-    // No es un comando de riego, ignorar
+    Serial.println(">> No es comando RIEGO, se ignora.");
     return;
   }
 
-  // Buscar Z1=
+  // --- Procesar Z1 (solo si aparece Z1=) ---
   int idxZ1 = linea.indexOf("Z1=");
   if (idxZ1 >= 0 && idxZ1 + 3 < (int)linea.length()) {
     char c = linea.charAt(idxZ1 + 3);
-    if (c == '1') {
+    if (c == '1' && !riegoZ1) {
       riegoZ1 = true;
-    } else if (c == '0') {
+      Serial.println(">> Z1: cambia a 1 -> abrirAgua()");
+      abrirAgua(servoZ1);
+    } else if (c == '0' && riegoZ1) {
       riegoZ1 = false;
+      Serial.println(">> Z1: cambia a 0 -> cerrarAgua()");
+      cerrarAgua(servoZ1);
+    } else {
+      Serial.print(">> Z1 sin cambio, valor: ");
+      Serial.println(c);
     }
   }
 
-  // Buscar Z2=
-  int idxZ2 = linea.indexOf("Z2=");
-  if (idxZ2 >= 0 && idxZ2 + 3 < (int)linea.length()) {
-    char c = linea.charAt(idxZ2 + 3);
-    if (c == '1') {
-      riegoZ2 = true;
-    } else if (c == '0') {
-      riegoZ2 = false;
-    }
-  }
-
-  aplicarEstadoRiego();
-
-  // (Opcional) Confirmación al PC/Django
+  // ACK de confirmación (solo Z1)
   Serial.print("ACK;");
   Serial.print("Z1=");
-  Serial.print(riegoZ1 ? 1 : 0);
-  Serial.print(";Z2=");
-  Serial.println(riegoZ2 ? 1 : 0);
+  Serial.println(riegoZ1 ? 1 : 0);
 }
 
 // ============================
-// Setup y loop principal
+// 5) Setup y loop principal
 // ============================
 
 void setup() {
   Serial.begin(9600);
+  Serial.println("Sistema de Riego Arduino iniciado (1 zona).");
 
   servoZ1.attach(PIN_SERVO_Z1);
-  servoZ2.attach(PIN_SERVO_Z2);
 
-  // Estado inicial: riego apagado (llaves cerradas)
+  // Dejar cerrado al inicio
+  servoZ1.write(ANGULO_CERRADO);
+  delay(500);
+
   riegoZ1 = false;
-  riegoZ2 = false;
-  aplicarEstadoRiego();
 }
 
 void loop() {
-  // 1) Leer comandos desde Django (si los hay)
+  // 1) Leer comandos
   if (Serial.available() > 0) {
     String linea = Serial.readStringUntil('\n');
     procesarComando(linea);
   }
 
-  // 2) Cada cierto intervalo, leer sensores y enviar datos
+  // 2) Enviar datos de sensor periódicamente
   unsigned long ahora = millis();
   if (ahora - ultimoEnvio >= INTERVALO_ENVIO) {
     ultimoEnvio = ahora;
 
-    // Leer sensores
     int lecturaZ1 = analogRead(PIN_SENSOR_Z1);
-    int lecturaZ2 = analogRead(PIN_SENSOR_Z2);
-
     float humedadZ1 = calcularHumedad(lecturaZ1, Z1_VALOR_SECO, Z1_VALOR_MOJADO);
-    float humedadZ2 = calcularHumedad(lecturaZ2, Z2_VALOR_SECO, Z2_VALOR_MOJADO);
 
-    // Enviar en una sola línea
     Serial.print("DATA;");
     Serial.print("Z1_RAW=");
     Serial.print(lecturaZ1);
     Serial.print(";Z1_HUM=");
-    Serial.print(humedadZ1, 2);
-    Serial.print(";Z2_RAW=");
-    Serial.print(lecturaZ2);
-    Serial.print(";Z2_HUM=");
-    Serial.println(humedadZ2, 2);
+    Serial.println(humedadZ1, 2);
   }
 }
-
 

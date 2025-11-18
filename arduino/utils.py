@@ -2,39 +2,58 @@ import serial
 from iot.settings import SERIAL_PORT, BAUDRATE, TIMEOUT_SECONDS
 from arduino.models import SensorZone
 
-def parse_data_line(line:str) -> dict:
+def parse_data_line(line: str) -> dict:
     """
-    Parsea una linea de datos recibida desde el dispositivo Arduino.
-    Convierte el formato: DATA;Z1_RAW=512;Z1_HUM=45.3;Z2_RAW=600;Z2_HUM=50.1
-    a un diccionario:
-    {
-        "Z1_RAW": 512,
-        "Z1_HUM": 45.3,
-        "Z2_RAW": 600,
-        "Z2_HUM": 50.1
-    }
+    Parsea una línea tipo:
+        DATA;Z1_RAW=1023;Z1_HUM=0.00
+
+    Devuelve un dict como:
+        {
+            "Z1_RAW": 1023.0,
+            "Z1_HUM": 0.0,
+        }
+
+    Es genérica: si algún campo no viene, simplemente no aparece en el dict.
     """
     line = line.strip()
+
     if not line.startswith("DATA;"):
         raise ValueError("Línea de datos inválida, no comienza con 'DATA;'")
-    
-    partes = line.split(";")[1:]  # Omitir el prefijo "DATA;"
-    data = {}
-    
-    for parte in partes:
-        if '=' in parte:
-            clave, valor = parte.split("=", 1)
-            data[clave] = valor
-    
-    return {
-        "Z1_RAW": int(data["Z1_RAW"]),
-        "Z1_HUM": float(data["Z1_HUM"]),
-        "Z2_RAW": int(data["Z2_RAW"]),
-        "Z2_HUM": float(data["Z2_HUM"]),
-    }
+
+    # Quitamos el prefijo "DATA;" y tomamos el resto
+    payload = line.split(";", 1)[1]
+
+    data: dict[str, float] = {}
+
+    for part in payload.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+
+        if "=" not in part:
+            # Algo raro sin "=" -> lo ignoramos
+            continue
+
+        key, value_str = part.split("=", 1)
+        key = key.strip()
+        value_str = value_str.strip()
+
+        if not key:
+            continue
+
+        try:
+            value = float(value_str)
+        except ValueError:
+            # Si no se puede convertir a float, lo ignoramos
+            continue
+
+        data[key] = value
+
+    return data
 
 
-def send_irrigation_command(z1_on: bool, z2_on: bool):
+
+def send_irrigation_command(z1_on: bool, z2_on: bool, ser:None):
     """
     Envía al arduino un comando del tipo:
     RIEGO;Z1=1;Z2=0
@@ -42,9 +61,13 @@ def send_irrigation_command(z1_on: bool, z2_on: bool):
     cmd = f"RIEGO;Z1={'1' if z1_on else '0'};Z2={'1' if z2_on else '0'}\n"
     print(f"Enviando comando: {cmd.strip()}")
 
-    with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=TIMEOUT_SECONDS) as ser:
+    if ser is not None:
         ser.write(cmd.encode('utf-8'))
         ser.flush()
+    else:
+        with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=TIMEOUT_SECONDS) as s:
+            s.write(cmd.encode('utf-8'))
+            s.flush()
 
 
 def get_zone_state_by_name(name: str) -> bool:
