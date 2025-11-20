@@ -11,7 +11,7 @@ from arduino.utils import parse_data_line  # seguimos reutilizando tu parser
 AGGREGATION_WINDOW_SECONDS = 60  # cambia a 10, 30, etc. si quieres
 
 # Activa / desactiva logs de debug
-DEBUG = True
+DEBUG = False
 
 
 class Command(BaseCommand):

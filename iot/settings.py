@@ -25,7 +25,7 @@ SECRET_KEY = "django-insecure-a9!kz-og@bo)n+7fu^yt7zvc)4dqdi)m#@vr+_xm1g5tcyh@ir
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -129,6 +129,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
 
 SERIAL_PORT = "COM10" # PUERTO SERIAL AL QUE ESTÁ CONECTADO ARDUINO
