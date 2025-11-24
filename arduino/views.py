@@ -7,6 +7,13 @@ from django.shortcuts import HttpResponseRedirect
 from .models import Plants, PlantCategory
 
 
+def index_redirect(request):
+    """Redirect root URL to login or admin home depending on auth state."""
+    if request.user.is_authenticated:
+        return redirect(reverse("arduino:home-admin"))
+    return redirect(reverse("arduino:login"))
+
+
 @login_required
 def home_admin_view(request):
     """

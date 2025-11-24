@@ -17,6 +17,7 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from arduino import views as arduino_views
 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -25,6 +26,8 @@ from rest_framework_simplejwt.views import (
 
 
 urlpatterns = [
+    # Root: redirect to login or admin home depending on auth state
+    path('', arduino_views.index_redirect, name='root-redirect'),
     path("admin/", admin.site.urls),
     # JWT Authentication
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
