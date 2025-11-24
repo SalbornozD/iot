@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "arduino.apps.ArduinoConfig",
     # REST Framework
     "rest_framework",
+    "rest_framework_simplejwt",
 ]
 
 MIDDLEWARE = [

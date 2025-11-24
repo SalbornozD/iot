@@ -29,5 +29,7 @@ urlpatterns = [
     # JWT Authentication
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-    
+
+    # API para flutter
+    path("api/", include("arduino.urls")),
 ]

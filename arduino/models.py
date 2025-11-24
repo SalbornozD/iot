@@ -1,63 +1,79 @@
 from django.db import models
+from typing import Optional
 
 
-class SensorZone(models.Model):
-    """
-    Representa la zona de riego controlada por el Arduino.
-    En este proyecto solo usamos Z1.
-    """
-
-    ZONE_CHOICES = (
-        ("Z1", "Zona 1"),
+class Plants(models.Model):
+    name = models.CharField(  # Nombre de la planta
+        max_length=255,
+        verbose_name="Nombre de la planta",
+        help_text="Nombre común de la planta."
     )
 
-    name = models.CharField(
-        max_length=2,
-        choices=ZONE_CHOICES,
-        default="Z1",
-        unique=True,
-        help_text="Identificador de la zona de riego. En este proyecto sólo usamos Z1.",
+    humidity_min = models.FloatField(  # Umbral mínimo de humedad
+        default=20.0,
+        verbose_name="Humedad mínima (%)",
+        help_text="Humedad mínima (%) antes de activar el riego."
     )
 
-    humidity_min = models.FloatField(
-        null=True,
-        blank=True,
-        help_text="Humedad mínima (%) antes de encender el riego.",
-    )
-    humidity_max = models.FloatField(
-        null=True,
-        blank=True,
-        help_text="Humedad máxima (%) a partir de la cual se apaga el riego.",
+    humidity_max = models.FloatField(  # Umbral máximo de humedad
+        default=60.0,
+        verbose_name="Humedad máxima (%)",
+        help_text="Humedad máxima (%) a partir de la cual se apaga el riego."
     )
 
-    # Activa/desactiva la zona: si está en False, nunca se ordena regar
-    is_enabled = models.BooleanField(
-        default=True,
-        help_text="Si está desactivada, el backend no ordenará riego para esta zona.",
+    created_at = models.DateTimeField(  # Fecha de creación
+        auto_now_add=True,
+        verbose_name="Fecha de creación"
     )
 
-    # Borrado lógico
-    is_active = models.BooleanField(default=True)
+    def __str__(self):
+        return f"Planta: {self.name}"
 
-    created_at = models.DateTimeField(auto_now_add=True)
 
+class Flowerpot(models.Model):
     SERVO_CHOICES = (
         ("ON", "Encendido"),
         ("OFF", "Apagado"),
     )
 
-    # Último estado decidido por el backend (no por el Arduino)
+    plant = models.ForeignKey(
+        Plants,
+        on_delete=models.CASCADE,
+        verbose_name="Planta asociada",
+        related_name="flowerpots",
+    )
+
+    manual_irrigation = models.BooleanField(
+        default=False,
+        verbose_name="Riego manual",
+        help_text="Si está activo, el riego se mantiene siempre encendido."
+    )
+
+    automatic_irrigation = models.BooleanField(
+        default=True,
+        verbose_name="Riego automático",
+        help_text="Si está activo, el riego se decide según la humedad."
+    )
+
     last_servo_state = models.CharField(
         max_length=3,
         choices=SERVO_CHOICES,
         default="OFF",
-        help_text="Último estado decidido por el backend para el servomotor.",
+        help_text="Último estado decidido para el servomotor.",
     )
 
-    last_updated_at = models.DateTimeField(auto_now=True)
+    last_updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última actualización"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación"
+    )
 
     def __str__(self):
-        return f"Zona: {self.name}"
+        return f"Maceta de {self.plant.name} (ID: {self.id})"
 
     # --------------------------
     # LÓGICA DE DECISIÓN DE RIEGO
@@ -65,81 +81,108 @@ class SensorZone(models.Model):
 
     def decide_servo_state(self, humidity: float) -> str:
         """
-        Decide el estado lógico del servomotor basado en la humedad (%).
+        Devuelve 'ON' o 'OFF' según las siguientes reglas:
 
-        Devuelve:
-        - 'ON'  -> encender riego
-        - 'OFF' -> apagar riego
-        - Si no hay umbrales configurados o la zona está deshabilitada,
-          mantiene el estado anterior.
+        1) Si manual_irrigation == True  -> 'ON'
+        2) Si manual_irrigation == False y automatic_irrigation == False -> 'OFF'
+        3) Si manual_irrigation == False y automatic_irrigation == True:
+           - Si humedad < humidity_min -> 'ON'
+           - Si humedad > humidity_max -> 'OFF'
+           - Si está entre min y max   -> se mantiene el último estado
         """
-        # Si la zona está deshabilitada o sin umbrales, no cambiar el estado
-        if (not self.is_enabled or
-                self.humidity_min is None or
-                self.humidity_max is None):
-            return self.last_servo_state
 
-        if humidity < self.humidity_min:
+        # 1) PRIORIDAD: MODO MANUAL
+        if self.manual_irrigation:
             return "ON"
-        elif humidity > self.humidity_max:
+
+        # 2) SIN MANUAL Y SIN AUTOMÁTICO -> SIEMPRE APAGADO
+        if not self.automatic_irrigation:
+            return "OFF"
+
+        # 3) MODO AUTOMÁTICO: usar rangos de humedad de la planta
+        if (
+            self.plant is None or
+            self.plant.humidity_min is None or
+            self.plant.humidity_max is None
+        ):
+            # Si falta info de la planta, por seguridad apagamos
+            return "OFF"
+
+        if humidity < self.plant.humidity_min:
+            return "ON"
+        elif humidity > self.plant.humidity_max:
             return "OFF"
         else:
-            # Dentro del rango -> mantener lo que ya estaba
+            # Dentro del rango, mantenemos como estaba para evitar cambios constantes
             return self.last_servo_state
 
     def build_riego_command(self, state: str) -> str:
         """
-        Construye la orden a enviar al Arduino según el protocolo:
-
-        RIEGO;Z1=1  (ON)
-        RIEGO;Z1=0  (OFF)
+        RIEGO;1  -> encender
+        RIEGO;0  -> apagar
         """
         value = "1" if state == "ON" else "0"
-        return f"RIEGO;{self.name}={value}"
+        return f"RIEGO;{value}"
 
-    def apply_servo_decision(self, humidity: float):
+    def apply_servo_decision(self, humidity: float) -> Optional[str]:
         """
-        Usa decide_servo_state() para decidir, y si hay cambio de estado:
+        Calcula el nuevo estado con decide_servo_state() y, si cambia:
         - Actualiza last_servo_state
-        - Crea un IrrigationEvent
-        - Devuelve el comando de riego para enviar al Arduino (string)
+        - Crea un IrrigationEvent (marcando si fue manual o automático)
+        - Devuelve el comando a enviar al Arduino (RIEGO;1 / RIEGO;0)
 
         Si no hay cambio de estado, devuelve None.
         """
         new_state = self.decide_servo_state(humidity)
 
-        # Si no hay cambio, no registramos evento ni mandamos comando nuevo
         if new_state == self.last_servo_state:
             return None
 
-        # Actualizar estado
+        # Actualizar estado en BD
         self.last_servo_state = new_state
         self.save(update_fields=["last_servo_state", "last_updated_at"])
 
+        # Determinar si este evento fue manual o automático
+        irrigation_mode = "MANUAL" if self.manual_irrigation else "AUTO"
+
         # Registrar evento
         IrrigationEvent.objects.create(
-            zone=self,
+            flowerpot=self,
             action=new_state,
             humidity_at_event=humidity,
+            mode=irrigation_mode,
         )
 
-        # Devolver comando tipo: RIEGO;Z1=1 / RIEGO;Z1=0
+        # Comando para el Arduino
         return self.build_riego_command(new_state)
 
 
 class SensorReading(models.Model):
     """
-    Representa una lectura de humedad tomada por el Arduino para Z1.
+    Representa una lectura de humedad tomada por el Arduino para el macetero.
     """
-    zone = models.ForeignKey(SensorZone, on_delete=models.CASCADE)
-    humidity = models.FloatField()
-    created_at = models.DateTimeField(auto_now_add=True)
+    flowerpot = models.ForeignKey(  # Macetero asociado
+        Flowerpot,
+        on_delete=models.CASCADE,
+        related_name="sensor_readings",
+        verbose_name="Macetero",
+    )
+
+    humidity = models.FloatField(  # Humedad (%)
+        help_text="Humedad medida por el sensor (%).",
+        verbose_name="Humedad (%)"
+    )
+
+    created_at = models.DateTimeField(  # Fecha de creación
+        auto_now_add=True,
+        verbose_name="Fecha de lectura"
+    )
 
     class Meta:
         ordering = ["-created_at"]  # Ordenar por fecha de creación descendente
 
     def __str__(self):
-        return f"Zona {self.zone.name} - Humedad: {self.humidity}%"
+        return f"Maceta {self.flowerpot.id} - Humedad: {self.humidity}%"
 
 
 class IrrigationEvent(models.Model):
@@ -147,24 +190,51 @@ class IrrigationEvent(models.Model):
     Representa un evento de riego iniciado o detenido por el sistema.
     """
 
-    ACTION_CHOICES = (
+    ACTION_CHOICES = (  # Tipos de acción
         ("ON", "Encendido"),
         ("OFF", "Apagado"),
     )
 
-    zone = models.ForeignKey(
-        SensorZone,
+    MODE_CHOICES = (  # Modo de riego
+        ("MANUAL", "Manual"),
+        ("AUTO", "Automático"),
+    )
+
+    flowerpot = models.ForeignKey(  # Macetero asociado
+        Flowerpot,
         on_delete=models.CASCADE,
         related_name="irrigation_events",
+        verbose_name="Macetero",
     )
-    action = models.CharField(max_length=3, choices=ACTION_CHOICES)
-    humidity_at_event = models.FloatField(
-        help_text="Humedad (%) al momento del evento de riego."
+
+    action = models.CharField(  # Acción realizada
+        max_length=3,
+        choices=ACTION_CHOICES,
+        verbose_name="Acción",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+
+    mode = models.CharField(  # Modo de riego (manual/automático)
+        max_length=7,
+        choices=MODE_CHOICES,
+        verbose_name="Modo de riego",
+        help_text="Indica si el riego fue manual o automático.",
+    )
+
+    humidity_at_event = models.FloatField(  # Humedad (%) al momento del evento de riego
+        help_text="Humedad (%) al momento del evento de riego.",
+        verbose_name="Humedad (%) al evento"
+    )
+
+    created_at = models.DateTimeField(  # Fecha de creación
+        auto_now_add=True,
+        verbose_name="Fecha de creación"
+    )
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.zone.name} - {self.action} @ {self.humidity_at_event}%"
+        return (
+            f"Maceta {self.flowerpot.id} - {self.action} "
+            f"({self.mode}) @ {self.humidity_at_event}%"
+        )

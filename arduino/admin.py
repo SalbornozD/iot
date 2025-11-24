@@ -1,7 +1,8 @@
+from .models import Flowerpot, Plants, SensorReading, IrrigationEvent
 from django.contrib import admin
-from .models import SensorZone, SensorReading, IrrigationEvent
 
-# Register your models here.
-admin.site.register(SensorZone)
+admin.site.register(Flowerpot)
+admin.site.register(Plants)
 admin.site.register(SensorReading)
 admin.site.register(IrrigationEvent)
+

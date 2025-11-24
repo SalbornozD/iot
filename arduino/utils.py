@@ -1,27 +1,55 @@
+import time
 import serial
 from iot.settings import SERIAL_PORT, BAUDRATE, TIMEOUT_SECONDS
-from arduino.models import SensorZone
+from typing import Optional
 
-def parse_data_line(line: str) -> dict:
+def send_command(ser: serial.Serial, command:str) -> None:
     """
-    Parsea una línea tipo:
-        DATA;Z1_RAW=1023;Z1_HUM=0.00
-
-    Devuelve un dict como:
-        {
-            "Z1_RAW": 1023.0,
-            "Z1_HUM": 0.0,
-        }
-
-    Es genérica: si algún campo no viene, simplemente no aparece en el dict.
+    Envía un comando al Arduino a través del puerto serie.
     """
+    line = f"{command}\n"
+    ser.write(line.encode('utf-8'))
+    ser.flush()
+    time.sleep(0.1)  # Pequeña pausa para asegurar el envío
+
+def irrigation_on(ser: serial.Serial) -> None:
+    """
+    Envía el comando para activar el riego.
+    """
+    send_command(ser, "RIEGO;1")
+
+def irrigation_off(ser: serial.Serial) -> None:
+    """
+    Envía el comando para desactivar el riego.
+    """
+    send_command(ser, "RIEGO;0")
+
+def parse_data_line(line: str) -> dict[str, float]:
+    """
+    A partir de una línea del tipo:
+        DATA;HUM=45.2;RAW=678
+
+    Devuelve un objeto SensorReading con los valores parseados.
+    Si la línea no es válida, lanza una excepción ValueError.
+    """
+    # Normalizamos la línea
+    if line is None:
+        raise ValueError("Línea de datos nula")
+
     line = line.strip()
+    if not line:
+        raise ValueError("Línea de datos vacía")
 
+    # Debe comenzar con "DATA;"
     if not line.startswith("DATA;"):
         raise ValueError("Línea de datos inválida, no comienza con 'DATA;'")
 
-    # Quitamos el prefijo "DATA;" y tomamos el resto
-    payload = line.split(";", 1)[1]
+    # Intentamos separar el prefijo "DATA;" del resto
+    try:
+        _, payload = line.split(";", 1)
+    except ValueError:
+        # No hay nada después de "DATA;"
+        raise ValueError("Línea de datos inválida, falta payload después de 'DATA;'")
 
     data: dict[str, float] = {}
 
@@ -31,7 +59,7 @@ def parse_data_line(line: str) -> dict:
             continue
 
         if "=" not in part:
-            # Algo raro sin "=" -> lo ignoramos
+            # Parte sin "=", la ignoramos
             continue
 
         key, value_str = part.split("=", 1)
@@ -39,45 +67,52 @@ def parse_data_line(line: str) -> dict:
         value_str = value_str.strip()
 
         if not key:
+            # Clave vacía, ignoramos
             continue
 
         try:
             value = float(value_str)
         except ValueError:
-            # Si no se puede convertir a float, lo ignoramos
+            # Valor no numérico, ignoramos
             continue
 
         data[key] = value
 
     return data
 
-
-
-def send_irrigation_command(z1_on: bool, z2_on: bool, ser:None):
+def open_serial_port() -> serial.Serial:
     """
-    Envía al arduino un comando del tipo:
-    RIEGO;Z1=1;Z2=0
+    Abre y devuelve el puerto serie configurado para comunicarse con el Arduino.
+    Puede lanzar serial.SerialException si no se puede abrir.
     """
-    cmd = f"RIEGO;Z1={'1' if z1_on else '0'};Z2={'1' if z2_on else '0'}\n"
-    print(f"Enviando comando: {cmd.strip()}")
+    ser = serial.Serial(
+        port=SERIAL_PORT,
+        baudrate=BAUDRATE,
+        timeout=TIMEOUT_SECONDS,
+    )
+    return ser
 
-    if ser is not None:
-        ser.write(cmd.encode('utf-8'))
-        ser.flush()
-    else:
-        with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=TIMEOUT_SECONDS) as s:
-            s.write(cmd.encode('utf-8'))
-            s.flush()
-
-
-def get_zone_state_by_name(name: str) -> bool:
+def close_serial_port(ser: serial.Serial) -> None:
     """
-    Devuelve el estado actual (ON/OFF) de una zona según su last_servo_state.
-    Si la zona no existe, asumimos OFF.
+    Cierra el puerto serie si está abierto.
+    """
+    if ser and ser.is_open:
+        ser.close()
+
+def read_line_from_serial(ser: serial.Serial) -> Optional[str]:
+    """
+    Lee una línea del puerto serie.
+    Devuelve la línea como string, o None si no se pudo leer nada
+    o si ocurre un error.
     """
     try:
-        zone = SensorZone.objects.get(name=name)
-    except SensorZone.DoesNotExist:
-        return False
+        line_bytes = ser.readline()
+        if not line_bytes:
+            return None
 
-    return zone.last_servo_state == "ON"
+        # Ignoramos errores de decodificación por si llega algún byte raro
+        line = line_bytes.decode("utf-8", errors="ignore").strip()
+        return line or None
+    except (serial.SerialException, OSError, UnicodeDecodeError):
+        return None
+
