@@ -1,3 +1,97 @@
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import logout
+from django.shortcuts import HttpResponseRedirect
+
+from .models import Plants, PlantCategory
+
+
+@login_required
+def home_admin_view(request):
+    """
+    Vista simple para administrar plantas:
+    - Listar plantas existentes
+    - Crear nuevas plantas (nombre, image_url, categorías separadas por coma)
+    """
+    # Crear planta (POST)
+    if request.method == "POST":
+        name = request.POST.get("name") or ""
+        image_url = request.POST.get("image_url") or ""
+        categories_raw = request.POST.get("categories") or ""  # ej: "interior,suculenta"
+
+        if name.strip():
+            plant = Plants.objects.create(
+                name=name.strip(),
+                image_url=image_url.strip() or None,
+            )
+
+            # Procesar categorías separadas por coma
+            category_names = [c.strip() for c in categories_raw.split(",") if c.strip()]
+            for cat_name in category_names:
+                category, _ = PlantCategory.objects.get_or_create(name=cat_name)
+                plant.categories.add(category)
+
+            return redirect(reverse("arduino:home-admin"))
+
+    # GET: listar todas las plantas
+    plants = Plants.objects.prefetch_related("categories").order_by("-created_at")
+
+    context = {
+        "plants": plants,
+    }
+    return render(request, "arduino/home_admin.html", context)
+
+
+@login_required
+def edit_plant_view(request, pk):
+    plant = get_object_or_404(Plants, pk=pk)
+
+    if request.method == "POST":
+        name = request.POST.get("name") or plant.name
+        image_url = request.POST.get("image_url") or ""
+        humidity_min = request.POST.get("humidity_min")
+        humidity_max = request.POST.get("humidity_max")
+        categories_raw = request.POST.get("categories") or ""
+
+        plant.name = name.strip()
+        plant.image_url = image_url.strip() or None
+        try:
+            if humidity_min is not None and humidity_min != "":
+                plant.humidity_min = float(humidity_min)
+            if humidity_max is not None and humidity_max != "":
+                plant.humidity_max = float(humidity_max)
+        except ValueError:
+            pass
+
+        plant.save()
+
+        plant.categories.clear()
+        category_names = [c.strip() for c in categories_raw.split(",") if c.strip()]
+        for cat_name in category_names:
+            category, _ = PlantCategory.objects.get_or_create(name=cat_name)
+            plant.categories.add(category)
+
+        return redirect(reverse("arduino:home-admin"))
+
+    categories_str = ", ".join(list(plant.categories.values_list("name", flat=True)))
+    context = {"plant": plant, "categories_str": categories_str}
+    return render(request, "arduino/edit_plant.html", context)
+
+
+@login_required
+def delete_plant_view(request, pk):
+    plant = get_object_or_404(Plants, pk=pk)
+    if request.method == "POST":
+        plant.delete()
+        return redirect(reverse("arduino:home-admin"))
+    return redirect(reverse("arduino:home-admin"))
+
+
+def logout_view(request):
+    """Log out the current user and redirect to the login page."""
+    logout(request)
+    return HttpResponseRedirect(reverse("arduino:login"))
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated

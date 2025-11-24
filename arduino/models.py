@@ -1,5 +1,20 @@
+from django.conf import settings
 from django.db import models
 from typing import Optional
+
+
+class PlantCategory(models.Model):
+    """Categoría de planta (por ejemplo: interior, suculenta, árbol)."""
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name="Nombre de la categoría",
+        help_text="Nombre de la categoría (por ejemplo: interior, suculenta).",
+    )
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Plants(models.Model):
@@ -7,6 +22,23 @@ class Plants(models.Model):
         max_length=255,
         verbose_name="Nombre de la planta",
         help_text="Nombre común de la planta."
+    )
+
+    # URL de la imagen remota para facilitar su uso desde Flutter
+    image_url = models.URLField(
+        blank=True,
+        null=True,
+        verbose_name="URL de la imagen",
+        help_text="URL pública de la imagen de la planta."
+    )
+
+    # Una planta puede pertenecer a varias categorías (interior, suculenta, árbol, etc.)
+    categories = models.ManyToManyField(
+        PlantCategory,
+        related_name="plants",
+        blank=True,
+        verbose_name="Categorías",
+        help_text="Categorías asociadas a la planta (interior, suculenta, árbol, etc.).",
     )
 
     humidity_min = models.FloatField(  # Umbral mínimo de humedad

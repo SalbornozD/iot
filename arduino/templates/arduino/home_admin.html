@@ -1,0 +1,85 @@
+{% extends 'arduino/base.html' %}
+
+{% block title %}Administrar Plantas{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3">Administrar Plantas</h1>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="card-title">Crear nueva planta</h5>
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">Nombre</label>
+          <input class="form-control" type="text" name="name" required />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">URL de la imagen</label>
+          <input class="form-control" type="text" name="image_url" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Categorías (separadas por coma)</label>
+          <input class="form-control" type="text" name="categories" placeholder="interior, suculenta" />
+        </div>
+        <button class="btn btn-primary" type="submit">Crear planta</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h5 class="card-title">Plantas existentes</h5>
+      <div class="table-responsive">
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Imagen</th>
+              <th>Categorías</th>
+              <th>Humedad mín./máx.</th>
+              <th>Creada</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for plant in plants %}
+              <tr>
+                <td>{{ plant.name }}</td>
+                <td>
+                  {% if plant.image_url %}
+                    <img src="{{ plant.image_url }}" alt="{{ plant.name }}" style="max-width:80px;max-height:80px;object-fit:cover;" />
+                  {% else %}
+                    <span class="text-muted">(sin imagen)</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% for cat in plant.categories.all %}
+                    <span class="badge bg-secondary">{{ cat.name }}</span>
+                  {% empty %}
+                    <span class="text-muted">(sin categorías)</span>
+                  {% endfor %}
+                </td>
+                <td>{{ plant.humidity_min }}% / {{ plant.humidity_max }}%</td>
+                <td>{{ plant.created_at }}</td>
+                <td>
+                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'arduino:edit-plant' plant.pk %}">Editar</a>
+                  <form method="post" action="{% url 'arduino:delete-plant' plant.pk %}" style="display:inline-block; margin-left:6px;">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('¿Eliminar planta?');">Borrar</button>
+                  </form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6">Aún no hay plantas.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

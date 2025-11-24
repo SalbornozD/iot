@@ -30,6 +30,7 @@ urlpatterns = [
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
 
-    # API para flutter
-    path("api/", include("arduino.urls")),
+    # API para flutter (usar namespace diferente para evitar colisiones)
+    path("api/", include(("arduino.urls", "arduino"), namespace="arduino_api")),
+    path("arduino/", include("arduino.urls")),
 ]

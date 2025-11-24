@@ -1,0 +1,37 @@
+{% extends 'arduino/base.html' %}
+
+{% block title %}Editar Planta{% endblock %}
+
+{% block content %}
+  <h1 class="h3 mb-3">Editar Planta</h1>
+
+  <div class="card">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">Nombre</label>
+          <input class="form-control" type="text" name="name" value="{{ plant.name }}" required />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">URL de la imagen</label>
+          <input class="form-control" type="text" name="image_url" value="{{ plant.image_url }}" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Humedad mínima (%)</label>
+          <input class="form-control" type="number" step="0.1" name="humidity_min" value="{{ plant.humidity_min }}" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Humedad máxima (%)</label>
+          <input class="form-control" type="number" step="0.1" name="humidity_max" value="{{ plant.humidity_max }}" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Categorías (separadas por coma)</label>
+          <input class="form-control" type="text" name="categories" value="{{ categories_str }}" />
+        </div>
+        <button class="btn btn-primary" type="submit">Guardar</button>
+        <a class="btn btn-secondary" href="{% url 'arduino:home-admin' %}">Cancelar</a>
+      </form>
+    </div>
+  </div>
+{% endblock %}

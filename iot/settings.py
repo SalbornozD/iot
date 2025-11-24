@@ -126,6 +126,10 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Redirects for login/logout within the admin UI
+LOGIN_REDIRECT_URL = "/arduino/home-admin/"
+LOGOUT_REDIRECT_URL = "/arduino/login/"
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
