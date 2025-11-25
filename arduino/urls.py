@@ -6,6 +6,8 @@ from .views import (
     ManualIrrigationView,
     PlantViewSet,
     SelectPlantView,
+    FlowerpotViewSet,
+    IrrigationEventViewSet,
 )
 from rest_framework.routers import DefaultRouter
 from django.contrib.auth.views import LoginView, LogoutView
@@ -15,6 +17,8 @@ app_name = "arduino"
 
 router = DefaultRouter()
 router.register(r"plants", PlantViewSet, basename="plants")
+router.register(r"flowerpots", FlowerpotViewSet, basename="flowerpots")
+router.register(r"irrigation/events", IrrigationEventViewSet, basename="irrigation-events")
 
 urlpatterns = [
     # Admin UI

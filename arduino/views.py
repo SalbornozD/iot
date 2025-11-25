@@ -170,6 +170,7 @@ from .serializers import (
     ManualIrrigationSerializer,
     PlantSerializer,
     SelectPlantSerializer,    
+    IrrigationEventSerializer,
 )
 
 
@@ -183,13 +184,21 @@ class HomeScreenView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, format=None):
-        # Por ahora asumimos una sola maceta. Luego se puede filtrar por ID o usuario.
-        flowerpot = (
-            Flowerpot.objects
-            .select_related("plant")
-            .prefetch_related("sensor_readings")
-            .first()
-        )
+        # Soportamos opcionalmente filtrar por maceta usando ?flowerpot=<id>
+        flowerpot_id = request.query_params.get("flowerpot")
+        if flowerpot_id:
+            try:
+                flowerpot = Flowerpot.objects.select_related("plant").prefetch_related("sensor_readings").filter(pk=int(flowerpot_id)).first()
+            except (ValueError, TypeError):
+                flowerpot = None
+        else:
+            # Por defecto tomamos la primera maceta
+            flowerpot = (
+                Flowerpot.objects
+                .select_related("plant")
+                .prefetch_related("sensor_readings")
+                .first()
+            )
 
         if flowerpot is None:
             return Response(
@@ -224,8 +233,15 @@ class AutomaticIrrigationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, format=None):
-        # Por ahora asumimos una sola maceta
-        flowerpot = Flowerpot.objects.select_related("plant").first()
+        # Soportamos opcionalmente especificar la maceta con ?flowerpot=<id>
+        flowerpot_id = request.query_params.get("flowerpot")
+        if flowerpot_id:
+            try:
+                flowerpot = Flowerpot.objects.select_related("plant").filter(pk=int(flowerpot_id)).first()
+            except (ValueError, TypeError):
+                flowerpot = None
+        else:
+            flowerpot = Flowerpot.objects.select_related("plant").first()
 
         if flowerpot is None:
             return Response(
@@ -268,8 +284,15 @@ class ManualIrrigationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, format=None):
-        # Por ahora asumimos una sola maceta
-        flowerpot = Flowerpot.objects.select_related("plant").first()
+        # Soportamos opcionalmente especificar la maceta con ?flowerpot=<id>
+        flowerpot_id = request.query_params.get("flowerpot")
+        if flowerpot_id:
+            try:
+                flowerpot = Flowerpot.objects.select_related("plant").filter(pk=int(flowerpot_id)).first()
+            except (ValueError, TypeError):
+                flowerpot = None
+        else:
+            flowerpot = Flowerpot.objects.select_related("plant").first()
 
         if flowerpot is None:
             return Response(
@@ -350,3 +373,39 @@ class SelectPlantView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class FlowerpotViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    List / Retrieve Flowerpots.
+    """
+    queryset = Flowerpot.objects.select_related("plant").all()
+    serializer_class = FlowerpotSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class IrrigationEventViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    List irrigation events. Supports filtering by flowerpot via query param `?flowerpot=<id>`.
+    """
+    serializer_class = IrrigationEventSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = (
+            getattr(Flowerpot, "irrigation_events", None)
+        )
+        # Better: query directly from model
+        from arduino.models import IrrigationEvent
+
+        queryset = IrrigationEvent.objects.select_related("flowerpot").all()
+
+        flowerpot_id = self.request.query_params.get("flowerpot")
+        if flowerpot_id:
+            try:
+                fp = int(flowerpot_id)
+                queryset = queryset.filter(flowerpot__id=fp)
+            except ValueError:
+                pass
+
+        return queryset.order_by("-created_at")

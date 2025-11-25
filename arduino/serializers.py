@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from arduino.models import Plants, Flowerpot, SensorReading
+from arduino.models import Plants, Flowerpot, SensorReading, IrrigationEvent
 
 
 class PlantSerializer(serializers.ModelSerializer):
@@ -36,6 +36,21 @@ class FlowerpotSerializer(serializers.ModelSerializer):
             "automatic_irrigation",
             "last_servo_state",
             "last_updated_at",
+            "created_at",
+        ]
+
+
+class IrrigationEventSerializer(serializers.ModelSerializer):
+    flowerpot_id = serializers.PrimaryKeyRelatedField(source='flowerpot', read_only=True)
+
+    class Meta:
+        model = IrrigationEvent
+        fields = [
+            "id",
+            "flowerpot_id",
+            "action",
+            "mode",
+            "humidity_at_event",
             "created_at",
         ]
 
