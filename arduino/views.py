@@ -5,6 +5,7 @@ from django.contrib.auth import logout
 from django.shortcuts import HttpResponseRedirect
 
 from .models import Plants, PlantCategory
+from django.views.decorators.http import require_POST
 
 
 def index_redirect(request):
@@ -25,7 +26,10 @@ def home_admin_view(request):
     if request.method == "POST":
         name = request.POST.get("name") or ""
         image_url = request.POST.get("image_url") or ""
-        categories_raw = request.POST.get("categories") or ""  # ej: "interior,suculenta"
+        humidity_min = request.POST.get("humidity_min")
+        humidity_max = request.POST.get("humidity_max")
+        category_id = request.POST.get("category_id") or ""
+        category_location = request.POST.get("category_location") or "BOTH"
 
         if name.strip():
             plant = Plants.objects.create(
@@ -33,11 +37,26 @@ def home_admin_view(request):
                 image_url=image_url.strip() or None,
             )
 
-            # Procesar categorías separadas por coma
-            category_names = [c.strip() for c in categories_raw.split(",") if c.strip()]
-            for cat_name in category_names:
-                category, _ = PlantCategory.objects.get_or_create(name=cat_name)
-                plant.categories.add(category)
+            # Handle numeric fields if provided
+            try:
+                if humidity_min is not None and humidity_min != "":
+                    plant.humidity_min = float(humidity_min)
+                if humidity_max is not None and humidity_max != "":
+                    plant.humidity_max = float(humidity_max)
+                plant.save()
+            except ValueError:
+                # Ignore invalid numeric input and keep defaults
+                pass
+
+            # Associate selected single category (if provided)
+            if category_id:
+                try:
+                    cid = int(category_id)
+                    category = PlantCategory.objects.filter(pk=cid).first()
+                    if category:
+                        plant.categories.add(category)
+                except (ValueError, TypeError):
+                    pass
 
             return redirect(reverse("arduino:home-admin"))
 
@@ -46,8 +65,28 @@ def home_admin_view(request):
 
     context = {
         "plants": plants,
+        "categories": PlantCategory.objects.order_by("name"),
     }
     return render(request, "arduino/home_admin.html", context)
+
+
+@require_POST
+@login_required
+def create_category_view(request):
+    """Create a PlantCategory from the admin UI."""
+    name = request.POST.get("category_name") or ""
+    location = request.POST.get("category_location") or "BOTH"
+    if name.strip():
+        PlantCategory.objects.get_or_create(name=name.strip(), defaults={"location": location})
+    return redirect(reverse("arduino:home-admin"))
+
+
+@require_POST
+@login_required
+def delete_category_view(request, pk):
+    cat = get_object_or_404(PlantCategory, pk=pk)
+    cat.delete()
+    return redirect(reverse("arduino:home-admin"))
 
 
 @login_required
@@ -59,7 +98,8 @@ def edit_plant_view(request, pk):
         image_url = request.POST.get("image_url") or ""
         humidity_min = request.POST.get("humidity_min")
         humidity_max = request.POST.get("humidity_max")
-        categories_raw = request.POST.get("categories") or ""
+        category_id = request.POST.get("category_id") or ""
+        category_location = request.POST.get("category_location") or "BOTH"
 
         plant.name = name.strip()
         plant.image_url = image_url.strip() or None
@@ -73,16 +113,33 @@ def edit_plant_view(request, pk):
 
         plant.save()
 
+        # Replace categories with the single selected category (or none)
         plant.categories.clear()
-        category_names = [c.strip() for c in categories_raw.split(",") if c.strip()]
-        for cat_name in category_names:
-            category, _ = PlantCategory.objects.get_or_create(name=cat_name)
-            plant.categories.add(category)
+        if category_id:
+            try:
+                cid = int(category_id)
+                category = PlantCategory.objects.filter(pk=cid).first()
+                if category:
+                    # Optionally update the category's location based on the form
+                    try:
+                        if category_location in ("INDOOR", "OUTDOOR", "BOTH"):
+                            category.location = category_location
+                            category.save()
+                    except Exception:
+                        # Keep existing location if update fails for any reason
+                        pass
+                    plant.categories.add(category)
+            except (ValueError, TypeError):
+                pass
 
         return redirect(reverse("arduino:home-admin"))
 
     categories_str = ", ".join(list(plant.categories.values_list("name", flat=True)))
-    context = {"plant": plant, "categories_str": categories_str}
+    context = {
+        "plant": plant,
+        "categories_str": categories_str,
+        "categories": PlantCategory.objects.order_by("name"),
+    }
     return render(request, "arduino/edit_plant.html", context)
 
 

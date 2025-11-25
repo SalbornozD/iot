@@ -29,6 +29,10 @@ urlpatterns = [
     ),
     path("logout/", views.logout_view, name="logout"),
 
+    # Category management for admin UI
+    path("categories/create/", views.create_category_view, name="create-category"),
+    path("categories/<int:pk>/delete/", views.delete_category_view, name="delete-category"),
+
     # API endpoints (DRF)
     path("home/", HomeScreenView.as_view(), name="home-screen"),
     path("irrigation/automatic/", AutomaticIrrigationView.as_view(), name="automatic-irrigation"),

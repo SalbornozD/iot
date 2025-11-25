@@ -4,13 +4,28 @@ from typing import Optional
 
 
 class PlantCategory(models.Model):
-    """Categoría de planta (por ejemplo: interior, suculenta, árbol)."""
+    """Categoría de planta (por ejemplo:arbusto, suculenta, árbol)."""
+
+    LOCATION_CHOICES = (
+        ("INDOOR", "Interior"),
+        ("OUTDOOR", "Exterior"),
+        ("BOTH", "Ambas"),
+    )
 
     name = models.CharField(
         max_length=100,
         unique=True,
         verbose_name="Nombre de la categoría",
         help_text="Nombre de la categoría (por ejemplo: interior, suculenta).",
+    )
+
+    # Indica si la categoría está pensada para interior, exterior o ambas
+    location = models.CharField(
+        max_length=10,
+        choices=LOCATION_CHOICES,
+        default="BOTH",
+        verbose_name="Ubicación",
+        help_text="Indica si la planta de esta categoría suele ser de interior, exterior o ambas.",
     )
 
     def __str__(self) -> str:
@@ -52,6 +67,8 @@ class Plants(models.Model):
         verbose_name="Humedad máxima (%)",
         help_text="Humedad máxima (%) a partir de la cual se apaga el riego."
     )
+
+    # (Nota: la temperatura preferida se eliminó — solo usamos humedad para riego.)
 
     created_at = models.DateTimeField(  # Fecha de creación
         auto_now_add=True,
