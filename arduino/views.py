@@ -279,7 +279,7 @@ class ManualIrrigationView(APIView):
     Lógica:
     - Solo actualiza el flag manual_irrigation en la maceta.
     - La lógica de riego real (servo, comandos por serial, etc.)
-      la hace el proceso/comando que lee periódicamente este valor.
+    la hace el proceso/comando que lee periódicamente este valor.
     """
     permission_classes = [IsAuthenticated]
 
@@ -409,3 +409,16 @@ class IrrigationEventViewSet(viewsets.ReadOnlyModelViewSet):
                 pass
 
         return queryset.order_by("-created_at")
+    
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated] #solo usuarios logueados pueden ver esto
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name
+        })
